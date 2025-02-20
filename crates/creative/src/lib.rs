@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use fmc_api as fmc;
-use fmc_api::{math::BVec3, prelude::*};
+use fmc_client_api as fmc;
+use fmc_client_api::{math::BVec3, prelude::*};
 
 // sqrt(2 * gravity * wanted height(1.4)) + some for air resistance
 const JUMP_VELOCITY: f32 = 9.0;
@@ -31,7 +31,7 @@ struct Movement {
     delta_time: Duration,
 }
 
-impl fmc_api::Plugin for Movement {
+impl fmc::Plugin for Movement {
     fn update(&mut self) {
         self.delta_time = Duration::from_secs_f32(fmc::delta_time());
         self.last_jump += self.delta_time;
@@ -68,7 +68,7 @@ impl fmc_api::Plugin for Movement {
     }
 }
 
-fmc_api::register_extension!(Movement);
+fmc::register_plugin!(Movement);
 
 impl Movement {
     fn accelerate(&mut self) {

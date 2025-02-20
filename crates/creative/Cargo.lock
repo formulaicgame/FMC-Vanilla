@@ -18,7 +18,7 @@ checksum = "8f68f53c83ab957f72c32642f3868eec03eb974d1fb82e453128456482613d36"
 name = "creative"
 version = "0.1.0"
 dependencies = [
- "fmc_api",
+ "fmc_client_api",
 ]
 
 [[package]]
@@ -28,8 +28,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "fmc_api"
-version = "0.1.0"
+name = "fmc_client_api"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5ac2f338ae7c03c2c061fd5a98f29c87a39b05303017875a9205314b3082f59"
 dependencies = [
  "glam",
  "wit-bindgen",
