@@ -9,6 +9,7 @@ pub mod world;
 pub use fmc;
 
 pub mod prelude {
+    #[doc(no_inline)]
     pub use fmc::prelude::*;
 }
 
