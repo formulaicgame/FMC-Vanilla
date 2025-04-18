@@ -171,9 +171,12 @@ impl Movement {
         let mut move_back = Vec3::ZERO;
         let mut friction = Vec3::ZERO;
         for velocity in [
+            // TODO: If you hit a horizontal ridge at the edge you will pass through because none
+            // of these velocity vectors will move the aabb into the block. If a way could be found
+            // to not separate the velocity vector into components that would be nice, more
+            // efficient too.
             Vec3::new(0.0, self.velocity.y, 0.0),
-            Vec3::new(self.velocity.x, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, self.velocity.z),
+            Vec3::new(self.velocity.x, 0.0, self.velocity.z),
         ] {
             let pos_after_move = player_transform.translation + velocity * delta_time;
 

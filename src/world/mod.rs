@@ -52,7 +52,7 @@ pub struct WorldProperties {
 
 impl WorldProperties {
     fn load(database: Res<Database>) -> Option<WorldProperties> {
-        let conn = database.get_connection();
+        let conn = database.get_read_connection();
         let mut stmt = conn
             .prepare("SELECT data FROM storage WHERE name = ?")
             .unwrap();
@@ -67,7 +67,7 @@ impl WorldProperties {
     }
 
     fn save(&self, database: Res<Database>) {
-        let conn = database.get_connection();
+        let conn = database.get_read_connection();
         let mut stmt = conn
             .prepare("INSERT OR REPLACE INTO storage (name, data) VALUES (?,?)")
             .unwrap();

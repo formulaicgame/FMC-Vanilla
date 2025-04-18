@@ -7,5 +7,4 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-fmc_client_api = "0.0.3"
-
+fmc_client_api = "0.0.5"

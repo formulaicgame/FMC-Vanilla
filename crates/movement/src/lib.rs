@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use fmc_client_api as fmc;
 use fmc_client_api::{math::BVec3, prelude::*};
+use serde::Deserialize;
 
 // sqrt(2 * gravity * wanted height(1.4)) + some for air resistance
 const JUMP_VELOCITY: f32 = 9.0;
@@ -17,6 +18,8 @@ const GRAVITY: Vec3 = Vec3::new(0.0, -32.0, 0.0);
 // v_t = v_0 * at => (v_t - v_0) / a = t
 const JUMP_TIME: f32 = JUMP_VELOCITY * 1.7 / -GRAVITY.y;
 
+type ModelId = u32;
+
 #[derive(Default)]
 struct Movement {
     acceleration: Vec3,
@@ -27,6 +30,7 @@ struct Movement {
     pressed_keys: HashSet<fmc::Key>,
     // Cached delta time
     delta_time: Duration,
+    models: HashSet<ModelId>,
 }
 
 impl fmc::Plugin for Movement {
@@ -35,6 +39,29 @@ impl fmc::Plugin for Movement {
         self.last_jump += self.delta_time;
         self.accelerate();
         self.simulate_physics();
+    }
+
+    fn handle_server_data(&mut self, data: Vec<u8>) {
+        #[derive(Deserialize)]
+        enum Packet {
+            /// Changes the player's velocity
+            Velocity(Vec3),
+            /// Notifies the plugin of which models it should collide with.
+            Models(Vec<ModelId>),
+        }
+
+        let Ok(packet) = bincode::deserialize::<Packet>(&data) else {
+            fmc::log("'Movement' plugin received malformed data from the server");
+            return;
+        };
+
+        match packet {
+            Packet::Velocity(velocity) => self.velocity += velocity,
+            Packet::Models(models) => {
+                self.models.clear();
+                self.models.extend(models);
+            }
+        }
     }
 
     fn set_update_frequency(&mut self) -> Option<f32> {
@@ -148,8 +175,7 @@ impl Movement {
         let mut friction = Vec3::ZERO;
         for velocity in [
             Vec3::new(0.0, self.velocity.y, 0.0),
-            Vec3::new(self.velocity.x, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, self.velocity.z),
+            Vec3::new(self.velocity.x, 0.0, self.velocity.z),
         ] {
             let pos_after_move = player_transform.translation + velocity * delta_time;
 
@@ -175,9 +201,13 @@ impl Movement {
 
                         friction = friction.max(block_friction.drag);
 
+                        let Some(block_aabb) = fmc::get_block_aabb(block_id) else {
+                            continue;
+                        };
+
                         let block_aabb = Aabb {
-                            center: block_pos.as_vec3() + 0.5,
-                            half_extents: Vec3::new(0.5, 0.5, 0.5),
+                            center: block_pos.as_vec3() + block_aabb.0,
+                            half_extents: block_aabb.1,
                         };
 
                         let Some(overlap) = player_aabb.intersection(&block_aabb) else {
@@ -188,70 +218,52 @@ impl Movement {
                             self.is_swimming = true;
                         }
 
-                        let backwards_time = overlap / -velocity;
-                        let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
-                            & backwards_time.cmpgt(Vec3::splat(0.0));
-                        let resolution_axis =
-                            Vec3::select(valid_axes, backwards_time, Vec3::NAN).max_element();
-
                         let Some(surface_friction) = block_friction.surface else {
                             continue;
                         };
 
-                        if resolution_axis == backwards_time.y {
-                            move_back.y = overlap.y + overlap.y / 100.0;
-                            self.is_grounded.y = true;
-                            self.velocity.y = 0.0;
-
-                            if velocity.y.is_sign_positive() {
-                                friction = friction.max(Vec3::splat(surface_friction.bottom));
-                            } else {
-                                friction = friction.max(Vec3::splat(surface_friction.top));
-                            }
-                        } else if resolution_axis == backwards_time.x {
-                            move_back.x = overlap.x + overlap.x / 100.0;
-                            self.is_grounded.x = true;
-                            self.velocity.x = 0.0;
-
-                            if velocity.x.is_sign_positive() {
-                                friction = friction.max(Vec3::splat(surface_friction.left));
-                            } else {
-                                friction = friction.max(Vec3::splat(surface_friction.right));
-                            }
-                        } else if resolution_axis == backwards_time.z {
-                            move_back.z = overlap.z + overlap.z / 100.0;
-                            self.is_grounded.z = true;
-                            self.velocity.z = 0.0;
-
-                            if velocity.z.is_sign_positive() {
-                                friction = friction.max(Vec3::splat(surface_friction.back));
-                            } else {
-                                friction = friction.max(Vec3::splat(surface_friction.front));
-                            }
-                        } else {
-                            // When velocity is really small there's numerical precision problems. Since a
-                            // resolution is guaranteed. Move it back by whatever the smallest resolution
-                            // direction is.
-                            let valid_axes = Vec3::select(
-                                backwards_time.cmpgt(Vec3::ZERO)
-                                    & backwards_time.cmplt(delta_time * 2.0),
-                                backwards_time,
-                                Vec3::NAN,
-                            );
-                            if valid_axes.x.is_finite()
-                                || valid_axes.y.is_finite()
-                                || valid_axes.z.is_finite()
-                            {
-                                let valid_axes = Vec3::select(
-                                    valid_axes.cmpeq(Vec3::splat(valid_axes.min_element())),
-                                    valid_axes,
-                                    Vec3::ZERO,
-                                );
-                                move_back += (valid_axes + valid_axes / 100.0) * -velocity;
-                            }
-                        }
+                        self.resolve_conflict(
+                            &mut move_back,
+                            &mut friction,
+                            &surface_friction,
+                            velocity,
+                            overlap,
+                            delta_time,
+                        );
                     }
                 }
+            }
+
+            let model_friction = fmc::SurfaceFriction {
+                top: 0.99,
+                bottom: 0.0,
+                left: 0.0,
+                right: 0.0,
+                front: 0.0,
+                back: 0.0,
+            };
+
+            for model_id in fmc::get_models(player_aabb.min(), player_aabb.max()) {
+                if !self.models.contains(&model_id) {
+                    continue;
+                }
+                let model_aabb = fmc::get_model_aabb(model_id);
+                let model_aabb = Aabb {
+                    center: model_aabb.0,
+                    half_extents: model_aabb.1,
+                };
+                let Some(overlap) = player_aabb.intersection(&model_aabb) else {
+                    continue;
+                };
+
+                self.resolve_conflict(
+                    &mut move_back,
+                    &mut friction,
+                    &model_friction,
+                    velocity,
+                    overlap,
+                    delta_time,
+                );
             }
         }
 
@@ -275,6 +287,71 @@ impl Movement {
         // Give a little boost when exiting water so that the bob stays constant.
         if was_swimming && !self.is_swimming {
             self.velocity.y += 1.5;
+        }
+    }
+
+    #[inline]
+    fn resolve_conflict(
+        &mut self,
+        move_back: &mut Vec3,
+        friction: &mut Vec3,
+        surface_friction: &fmc::SurfaceFriction,
+        velocity: Vec3,
+        overlap: Vec3,
+        delta_time: Vec3,
+    ) {
+        let backwards_time = overlap / -velocity;
+        let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
+            & backwards_time.cmpgt(Vec3::splat(0.0));
+        let resolution_axis = Vec3::select(valid_axes, backwards_time, Vec3::NAN).max_element();
+
+        if resolution_axis == backwards_time.y {
+            move_back.y = overlap.y + overlap.y / 100.0;
+            self.is_grounded.y = true;
+            self.velocity.y = 0.0;
+
+            if velocity.y.is_sign_positive() {
+                *friction = friction.max(Vec3::splat(surface_friction.bottom));
+            } else {
+                *friction = friction.max(Vec3::splat(surface_friction.top));
+            }
+        } else if resolution_axis == backwards_time.x {
+            move_back.x = overlap.x + overlap.x / 100.0;
+            self.is_grounded.x = true;
+            self.velocity.x = 0.0;
+
+            if velocity.x.is_sign_positive() {
+                *friction = friction.max(Vec3::splat(surface_friction.left));
+            } else {
+                *friction = friction.max(Vec3::splat(surface_friction.right));
+            }
+        } else if resolution_axis == backwards_time.z {
+            move_back.z = overlap.z + overlap.z / 100.0;
+            self.is_grounded.z = true;
+            self.velocity.z = 0.0;
+
+            if velocity.z.is_sign_positive() {
+                *friction = friction.max(Vec3::splat(surface_friction.back));
+            } else {
+                *friction = friction.max(Vec3::splat(surface_friction.front));
+            }
+        } else {
+            // When velocity is really small there's numerical precision problems. Since a
+            // resolution is guaranteed. Move it back by whatever the smallest resolution
+            // direction is.
+            let valid_axes = Vec3::select(
+                backwards_time.cmpgt(Vec3::ZERO) & backwards_time.cmplt(delta_time * 2.0),
+                backwards_time,
+                Vec3::NAN,
+            );
+            if valid_axes.x.is_finite() || valid_axes.y.is_finite() || valid_axes.z.is_finite() {
+                let valid_axes = Vec3::select(
+                    valid_axes.cmpeq(Vec3::splat(valid_axes.min_element())),
+                    valid_axes,
+                    Vec3::ZERO,
+                );
+                *move_back += (valid_axes + valid_axes / 100.0) * -velocity;
+            }
         }
     }
 }

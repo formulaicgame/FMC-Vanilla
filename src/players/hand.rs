@@ -254,10 +254,11 @@ fn break_blocks(
             //     position: IVec3,
             //     something to signify if it should drop
             // })
-            block_update_writer.send(BlockUpdate::Change {
+            block_update_writer.send(BlockUpdate::Replace {
                 position: block_position,
                 block_id: blocks.get_id("air"),
                 block_state: None,
+                block_data: None,
             });
 
             let (dropped_item_id, count) = match block_config.drop(tool_config) {
@@ -466,7 +467,6 @@ fn build_breaking_model() -> Model {
         mesh_vertices,
         mesh_normals,
         mesh_uvs: Some(mesh_uvs),
-        material_base_color: "FFFFFF".to_owned(),
         material_color_texture: None,
         material_parallax_texture: Some("blocks/breaking_1.png".to_owned()),
         material_alpha_mode: 2,
@@ -484,7 +484,7 @@ fn handle_right_clicks(
     model_map: Res<ModelMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     model_query: Query<(&Collider, &GlobalTransform), (With<Model>, Without<BlockPosition>)>,
-    mut player_query: Query<(&mut Hotbar, &Targets), With<Player>>,
+    mut player_query: Query<(&mut Hotbar, &Targets, &Camera), With<Player>>,
     mut item_use_query: Query<&mut ItemUses>,
     mut hand_interaction_query: Query<&mut HandInteractions>,
     mut block_update_writer: EventWriter<BlockUpdate>,
@@ -502,7 +502,8 @@ fn handle_right_clicks(
     }
 
     for right_click in clicks.read() {
-        let (mut hotbar, targets) = player_query.get_mut(right_click.player_entity).unwrap();
+        let (mut hotbar, targets, camera) =
+            player_query.get_mut(right_click.player_entity).unwrap();
 
         let mut action = ActionOrder::Interact;
 
@@ -550,7 +551,7 @@ fn handle_right_clicks(
                         &world_map,
                     ) {
                         let block_config = blocks.get_config(&block_id);
-                        let block_state = block_config.placement_rotation(*block_face);
+                        let block_state = block_config.placement_rotation(*block_face, &camera);
 
                         let replaced_collider = Collider::Aabb(Aabb {
                             center: replaced_block_position.as_dvec3(),
@@ -594,10 +595,11 @@ fn handle_right_clicks(
                             }
                         }
 
-                        block_update_writer.send(BlockUpdate::Change {
+                        block_update_writer.send(BlockUpdate::Replace {
                             position: replaced_block_position,
                             block_id,
                             block_state,
+                            block_data: None,
                         });
 
                         break;

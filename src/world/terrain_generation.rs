@@ -350,8 +350,9 @@ impl Earth {
     }
 
     fn generate_features(&self, chunk_position: ChunkPosition, chunk: &mut Chunk) {
-        let air = Blocks::get().get_id("air");
-        let surface = Surface::new(chunk, air);
+        let blocks = Blocks::get();
+        let surface_blocks = [blocks.get_id("grass")];
+        let surface = Surface::new(chunk, &surface_blocks, blocks.get_id("air"));
 
         // x position is left 32 bits and z position the right 32 bits. z must be converted to u32
         // first because it will just fill the left 32 bits with junk. World seed is used to change

@@ -131,7 +131,7 @@ pub struct PlayerSave {
 
 impl PlayerSave {
     fn save(&self, username: &str, database: &Database) {
-        let conn = database.get_connection();
+        let conn = database.get_write_connection();
 
         let mut stmt = conn
             .prepare("INSERT OR REPLACE INTO players VALUES (?,?)")
@@ -142,7 +142,7 @@ impl PlayerSave {
     }
 
     fn load(username: &str, database: &Database) -> Option<Self> {
-        let conn = database.get_connection();
+        let conn = database.get_read_connection();
 
         let mut stmt = conn
             .prepare("SELECT save FROM players WHERE name = ?")
