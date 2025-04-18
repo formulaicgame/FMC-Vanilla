@@ -1771,7 +1771,7 @@ dependencies = [
 
 [[package]]
 name = "fmc_vanilla"
-version = "0.0.2"
+version = "0.0.21"
 dependencies = [
  "bincode",
  "cargo_metadata",

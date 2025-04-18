@@ -56,17 +56,8 @@ fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
 }
 
 fn get_asset_paths() -> Vec<PathBuf> {
-    // Find the directory where the manifest of the binary being built is.
-    let mut binary_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    while !binary_dir.ends_with("target") {
-        binary_dir.pop();
-    }
-    binary_dir.pop();
-
-    let manifest_path = binary_dir.join("Cargo.toml");
-
+    let manifest_path = std::env::var_os("CARGO_MANIFEST_PATH").unwrap();
     let meta = cargo_metadata::MetadataCommand::new()
-        .cargo_path(std::env::var_os("CARGO").unwrap())
         .manifest_path(&manifest_path)
         .exec()
         .unwrap();
@@ -78,8 +69,8 @@ fn get_asset_paths() -> Vec<PathBuf> {
         index_lookup.insert(package.name.clone(), index);
     }
 
-    // A bit of mangling necessary here because the dependencies returned in metadata are in
-    // alphabetical order. The dependency order in Cargo.toml is the asset priority order, so we
+    // The dependencies returned in metadata are in alphabetical order.
+    // The dependency order in Cargo.toml is the asset priority order, so we
     // have to build it independently. The 'toml' crate has a 'preserve order' feature we use.
     let mut asset_paths_unsorted = HashMap::new();
 
@@ -120,7 +111,7 @@ fn get_asset_paths() -> Vec<PathBuf> {
     // Include assets from the binary's directory. For when you build the the library
     // crate as a binary or are creating a mod, where they wouldn't be counted among the
     // dependencies.
-    asset_paths.push(binary_dir);
+    asset_paths.push(std::env::var_os("CARGO_MANIFEST_DIR").unwrap().into());
 
     return asset_paths;
 }
