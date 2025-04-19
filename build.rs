@@ -4,7 +4,17 @@ use cargo_metadata::DependencyKind;
 
 // Compress the assets from game + mods into an archive that is included in the executable.
 fn main() {
-    println!("cargo:rerun-if-changed=assets");
+    // TODO: This doesn't seem to stop it from rebuilding when there are no changes
+    println!("cargo::rerun-if-changed=assets");
+
+    if std::env::var("DOCS_RS").is_ok() {
+        // docs.rs messes with the OUT_DIR so there is no cargo.toml to find.
+        // Replace the assets with a dummy file so it still compiles.
+        let out_dir = std::env::var("OUT_DIR").unwrap();
+        let dest_path = std::path::Path::new(&out_dir).join("assets.tar.zstd");
+        std::fs::write(dest_path, Vec::new()).unwrap();
+        return;
+    }
 
     let mut asset_paths = HashMap::new();
     for asset_path in get_asset_paths() {
@@ -56,7 +66,17 @@ fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
 }
 
 fn get_asset_paths() -> Vec<PathBuf> {
-    let manifest_path = std::env::var_os("CARGO_MANIFEST_PATH").unwrap();
+    // Find the directory where the manifest of the binary being built is.
+    // The CARGO_MANIFEST_* vars cannot be used because they lead to this package and not the
+    // main package being built.
+    let mut binary_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    while !binary_dir.ends_with("target") {
+        binary_dir.pop();
+    }
+    binary_dir.pop();
+
+    let manifest_path = binary_dir.join("Cargo.toml");
+
     let meta = cargo_metadata::MetadataCommand::new()
         .manifest_path(&manifest_path)
         .exec()
